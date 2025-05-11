@@ -1,0 +1,67 @@
+#
+# Labtainer Dockerfile
+#
+ARG registry
+FROM $registry/labtainer.base2
+#FROM $registry/labtainer.network
+#FROM $registry/labtainer.centos
+#FROM $registry/labtainer.lamp
+
+ARG lab
+ARG labdir
+ARG imagedir
+ARG user_name
+ARG password
+ARG apt_source
+ARG version
+LABEL version=$version
+ENV APT_SOURCE $apt_source
+RUN /usr/bin/apt-source.sh
+
+#
+# Tạo user
+#
+RUN useradd -ms /bin/bash $user_name
+RUN echo "$user_name:$password" | chpasswd
+RUN adduser $user_name sudo
+
+#
+# Cài các gói cần thiết, bao gồm hỗ trợ giao diện đồ họa và Scapy
+#
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python3 python3-pip \
+    wireshark \
+    tcpdump \
+    x11-apps \
+    libxcb-xinerama0 \
+    libxkbcommon-x11-0 && \
+    pip3 install scapy && \
+    groupadd wireshark && \
+    usermod -aG wireshark $user_name && \
+    chmod +x /usr/sbin/tcpdump && \
+    setcap cap_net_raw,cap_net_admin=eip /usr/sbin/tcpdump && \
+    echo "wireshark-common wireshark-common/install-setuid boolean true" | debconf-set-selections && \
+    dpkg-reconfigure -f noninteractive wireshark-common
+
+#
+# Thêm file hệ thống và dữ liệu lab
+#
+ADD $labdir/$imagedir/sys_tar/sys.tar /
+ADD $labdir/sys_$lab.tar.gz /
+
+#
+# Copy dữ liệu về home của user
+#
+USER $user_name
+ENV HOME /home/$user_name
+ADD $labdir/$imagedir/home_tar/home.tar $HOME
+RUN rm -f $HOME/home.tar
+ADD $labdir/$lab.tar.gz $HOME
+
+#
+# Khởi động container
+#
+USER root
+CMD ["/bin/bash", "-c", "exec /sbin/init --log-target=journal 3>&1"]
+
